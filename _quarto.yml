@@ -13,7 +13,7 @@ website:
         text: Home
       - href: notebooks/esg_text_mining_poc_final.ipynb
         text: Eticheck
-      - href: exoplanet_id_clustering_final.ipynb
+      - href: notebooks/exoplanet_id_clustering_final.ipynb
         text: exoplanet ID
 
 
