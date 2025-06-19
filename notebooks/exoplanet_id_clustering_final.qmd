@@ -1,0 +1,1294 @@
+---
+title: TU257 - Assignment B
+jupyter: python3
+---
+
+
+#### Student: Eamonn Kelly - student #: D24127620
+
+#### Part 2 File - Clustering
+
+
+## Problem Statement
+
+As planets in far away solar systems roate about suns, the light the reach earth from those sun is reduced, as the planet passes across its path. Monitoring the light coming from stars and looking for those dips in light intensity/brightness can be a way of identifying far away planets orbiting suns.
+
+Nasa have programs actively looking to identify these 'exoplanets' with the TESS and Kepler programs. They make this data availabel to the public and it is also available through some universities. 
+
+- https://science.nasa.gov/exoplanets/
+- https://exoplanets.nasa.gov/tess/
+
+
+Question: can we identify any similarities in light data from multiple stars which may lead to identification of planet passing in front of a star.
+
+```{python}
+import pandas as pd
+import numpy as np
+import os
+import requests
+
+
+from lightkurve import search_lightcurvefile, LightCurveFile, read #[1]
+from ydata_profiling import ProfileReport
+import sweetviz as sv
+
+#load the libraries we need for this example
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import MinMaxScaler
+from matplotlib import pyplot as plt
+from scipy.stats.mstats import winsorize
+from scipy.signal import find_peaks, peak_widths
+import astropy.units as u # [4]
+from astropy.timeseries import BoxLeastSquares
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_samples, silhouette_score
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+import seaborn as sns
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.cm as cm
+
+
+%matplotlib inline
+```
+
+### File Structure:
+
+1. Step 1 - Identifing and Downloading Data
+    - 1.1 Manually download .sh file 
+    - 1.2 Download Data files locally
+    - 1.4 Put Data into Dataframe
+1. Step 2 - Data Eploration
+    - 2.1 General Overview of state of data i.e. shape, missing values, duplicates, unusual characters etc
+    - 2.2 Generate report for analysis
+    - 2.3 Initial Data Insights
+    - 2.4 Remove unneeded columns and verify data as expected after deletion
+    - 2.5 Further Data Insights
+    - 2.6 Plot for how the data looks for different star types
+    - 2.7 Plots of distribution of data per column
+    - 2.8 Plots of outliers in the column data
+    - 2.9 Further Data Insights from plots
+1. Step 3 - Clean Data
+    - 3.1 Drop empty columns from 'pdcsap_flux' and verify successful
+    - 3.2 Further Data insight
+    - 3.3 Normalise the 'pdcsap_sap_flux' data and verify the chnages in a plot
+    - 3.4 Winsorise selected numerical columns and verify the chnages in a plot
+1. Step 4 - Extract a feature from the Data to cluster
+    - 4.1 Create new df of latest to work in
+    - 4.2 Determine light curve dip data values from 'pdcsap_flux_norm' and Plot them to verify data is as expect
+    - 4.3 Calculate and Add flux dip data, 'num_flux_dips' to new column in dataframe
+    - 4.4 Calculate the variability of the flux per star, we'll use the standard deviation to represent this, 'flux_std'
+    - 4.5 Calculate average dip duration per star, 'dip_duration'
+    - 4.6 Merge all calculated per star data into a dataframe
+    - 4.7 Data Insights
+    - 4.8 Normalise the dataframe and verify it is as we expect
+1. Step 5 - Clustering
+    - 5.1 - Create a new dataframe with one row per star on our feature
+    - 5.2 Plot elbow curve to determine appropriate cluster count
+    - 5.3 Create KMeans cluster and analyze data
+    - 5.4 Plot Kmeans cluster data
+    - 5.5 Plot Kmeans cluster data in 3D
+    - 5.6 Initial Data Insights
+    - 5.7 Plot Kmeans++ data
+    - 5.8 Calculate and Display the Silhouette values
+    - 5.9 Alternative silhouette data plot
+    - 5.10 Data Insights from silhouette plots
+1. Step 6 - Conclusions and Learning
+    - 6.1 Challenges
+    - 6.2 Improvements
+1. Appendix  - References
+
+## Step 1 - Sourcing and Downloding Data
+
+ [Space Telescope Sciende Institue](https://www.stsci.edu/)
+
+Download all TESS Full Frame Image (FFI), target pixel (TP) files, light curve (LC) files, or data validation (DV) files by sector using the cURL scripts provided. Digital Object Identifiers (DOIs) for each data product type in each TESS Sector are provided at below url
+
+I downloaded 4 or 5 of these from lightkurve section on the below page and ended up using sector 89. LightKurve contains actial light kurve data, and sector 89 just as it was at the top of the list
+
+https://archive.stsci.edu/tess/bulk_downloads/bulk_downloads_ffi-tp-lc-dv.html
+
+
+download data from here >> https://exoplanetarchive.ipac.caltech.edu/ 
+
+This is .sh file which and below is a sample of its content
+data is stored in FIT files which is s standard for astronomical data
+this sh file contains a list of 12K plus fit files and about 2 to 2.5 Mbs each... which is too many for our project. we'll just take a subset
+ 
+
+```sh
+#!/bin/sh
+curl -C - -L -o tess2025042113628-s0089-0000000000872755-0286-s_lc.fits https://mast.stsci.edu/api/v0.1/Download/file/?uri=mast:TESS/product/tess2025042113628-s0089-0000000000872755-0286-s_lc.fits
+curl -C - -L -o tess2025042113628-s0089-0000000000991159-0286-s_lc.fits https://mast.stsci.edu/api/v0.1/Download/file/?uri=mast:TESS/product/tess2025042113628-s0089-0000000000991159-0286-s_lc.fits
+curl -C - -L -o tess2025042113628-s0089-0000000000990995-0286-s_lc.fits https://mast.stsci.edu/api/v0.1/Download/file/?uri=mast:TESS/product/tess2025042113628-s0089-0000000000990995-0286-s_lc.fits
+curl -C - -L -o tess2025042113628-s0089-0000000001228450-0286-s_lc.fits https://mast.stsci.edu/api/v0.1/Download/file/?uri=mast:TESS/product/tess2025042113628-s0089-0000000001228450-0286-s_lc.fits
+curl -C - -L -o tess2025042113628-s0089-0000000001137183-0286-s_lc.fits https://mast.stsci.edu/api/v0.1/Download/file/?uri=mast:TESS/product/tess2025042113628-s0089-0000000001137183-0286-s_lc.fits
+```
+
+```sh
+ chmod +x tesscurl_sector_89_lc.sh ./tesscurl_sector_89_lc.sh
+```
+
+there is some data available on Kaggle >> https://www.kaggle.com/datasets/vijayveersingh/kepler-and-tess-exoplanet-data
+however we took directly form source and decided to explore and clean it ourselves
+
+download data from here >> https://exoplanetarchive.ipac.caltech.edu/ 
+
+
+Needed more control over whatwe download due to the volume of files. Crated the below python script to download the files we neede
+
+1.1 Manually download .sh file 
+
+First step is to manually download 'esscurl_sector_89_lc.sh' file from the following URL from the **Lightcurve** section. 
+
+[Mikulski ASrchive for ace Telescopes](https://archive.stsci.edu/tess/bulk_downloads/bulk_downloads_ffi-tp-lc-dv.html)
+
+Place it in your local folder alongside this notebook
+
+The shell file contains a list individual data files. Sector relates to different parts of the sky which are observed.
+
+1.2 Download Data files locally
+
+```{python}
+# define paths
+working_path = os.getcwd()
+fit_file_storage_path = os.path.join(working_path, "data")
+print(f"Notebook is running from here >> {working_path}")
+print(f"Data is located here >>  {working_path}")
+```
+
+```{python}
+# Python cel to identify data files to download form the .sh file and to then download them locally
+# need to manually add .sh filename that we downloaded
+# where to place the files and where the shell script is located#
+# Time - 100 fit files take approx 3 mins to download
+
+sh_file_path = os.path.join(working_path, 'tesscurl_sector_89_lc.sh')
+
+
+#create empty list of files we will download and the url to get them
+files_to_download = []
+# check if download directory exists
+os.makedirs(fit_file_storage_path, exist_ok=True)
+
+# open the .sh file and get the filename and url values from it and place in files_to_download list
+with open(sh_file_path, "r") as f:
+    for line in f:
+        # strip the elements of the line into 
+        if line.startswith("curl") and "-o" in line:
+            #remove leading and trailing whitespace and split into list of strings with spaces as seperatopr
+            parts = line.strip().split()
+            # include in try-except to not fail on any errors
+            try:
+                # the download url is the last part of the line and the filename is after '-o'
+                filename = parts[parts.index("-o") + 1]
+                # the URL is the last item in the line
+                # url is the last element of the line
+                url = parts[-1]
+                # append the filename and url to files_to_download list
+                if url.startswith("http"):
+                    files_to_download.append((filename, url))
+            except (ValueError, IndexError):
+                continue
+
+#define how many files to download
+files_to_download = files_to_download[:100]
+ 
+for filename, url in files_to_download:
+    # cdefine wherre to put the files
+    download_path_and_filename = os.path.join(fit_file_storage_path, filename)
+    # if have file already skip it
+    if os.path.exists(download_path_and_filename):
+        print(f"Already have that file - skipping: {filename}")
+        continue
+    print(f"....Downloading:... {filename}")
+    # download the file, chunking the download appears ot be best practice with large files
+    response = requests.get(url, stream=True)
+    if response.status_code == 200:
+        with open(download_path_and_filename, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        # print(f" Downloaded ...")
+    else:
+        print(f" Failed to download {filename} (status code: {response.status_code})")
+        
+        
+# [4] [Request and Response Objects](https://docs.python-requests.org/en/latest/user/advanced/)
+# [5] [Download large file in python with requests](https://stackoverflow.com/questions/16694907/download-large-file-in-python-with-requests)
+```
+
+1.3 - Put Data into Dataframe
+
+```{python}
+#  have 100 fits files >> tess2025042113628-s0089-0000000024918650-0286-s_lc.fits
+# merge all 100 into single dataframe
+
+#list to store data per file
+df_list=[]
+
+for i, filename in enumerate(os.listdir(fit_file_storage_path)):
+    if filename.endswith('.fits') and i < 100:
+        filepath = os.path.join(fit_file_storage_path, filename)
+        try:
+            lc = read(filepath)  # ← No .normalize(), no .remove_nans()
+            df = lc.to_pandas()
+            # need to explicitly call 'time' otherwise end up with a converted value of it...
+            # this is how the learnKurve package works
+            df['time'] = lc.time.value
+            # adding a column for source file so we cnatrack it as each source file represents a different star and can then filter by star
+            df['source_file'] = filename
+            df_list.append(df)
+        except Exception as e:
+            print(f" Skipping {filename} due to error: {e}")
+
+raw_df = pd.concat(df_list, ignore_index=True)
+```
+
+## Step 2 - Data Exploration
+
+Will perform some general data exploration to get a feel for the data
+
+2.1 - General Overview of state of data i.e. shape, missing values, duplicates, unusual characters, objecttypes etc
+
+```{python}
+# quick look at data to see if its clean, no duplicates, null values unusual characters etc
+# convert it to d first so can easily run some checks over it
+# view various dataframe details
+# checking for null values and specific unknown values
+print ("Rows     : " , raw_df.shape[0])
+print ("Columns  : " , raw_df.shape[1])
+print('------')
+print ("\nFeatures : \n" , raw_df.columns.tolist())
+print('------')
+print ("\nMissing values :  ", raw_df.isnull().sum().values.sum())
+print('------')
+print ("\nMissing values per column:  \n", raw_df.isnull().sum())
+print('------')
+print('\nnum of dups in df   =   {}'.format(raw_df.duplicated().sum()))
+print('------')
+print ("\nUnique values :  \n", raw_df.nunique())
+print('------')
+print('\n null values = ', raw_df.isnull().values.any())
+print('------')
+raw_df_missing = (df=='?').sum()
+print('\"  ?   \" values present =  \n',raw_df_missing)
+print('------')
+raw_df_unknown = (raw_df=='unknown').sum()
+print('\"   unknown   \" values present =  \n',raw_df_unknown)
+print('------')
+raw_df_na = raw_df.isin(['N/A', 'N\\A', 'NA', 'n/a', 'n\\A', 'na', 'N_A']).sum()
+print('    NA     values present = \n', raw_df_na)
+print('------')
+raw_df_none = raw_df.isin(['None', 'none']).sum()
+print('    none    values present = \n', raw_df_none)
+```
+
+```{python}
+raw_df.head(5)
+
+```
+
+2.2 Generate sweetviz report for analysis
+
+```{python}
+# ydata profiling report takes approx 30 mins + to generate compared top ~ 7/8 mins for sweetviz
+# created profiling report and analysed data using it. however given time toi run, have removed from notebook
+# and only generating sweetviz report here, which was also used for analysis
+# craete sweetviz report
+sweet_rep=sv.analyze(raw_df)
+sweet_rep.show_html('report-sweet-3333.html')
+```
+
+```{python}
+raw_df.info()
+```
+
+2.3 - Initial Data Insights
+
+standard deviation high for flus and pdsc_flux values > 2168736.75 AND 2168736.75
+
+- keep columns - 
+    - anything that includes the phrase'flux' is related to light intensity/brightness and will  kept
+    - 'flux' - intensity  / brightness of the star light - this is raw data
+    - 'flux_err' - error associated wuth flux
+    - 'sap_flux' - - related to intensity  / brightness of star light in aperture in electrons p sec. Has not been co-trended
+    - 'pdcsap_flux' - related to intensity  / brightness of star light in aperture in electrons p sec. Has been co-trended. This is flux data which has been cleaned. It is a good candidate to cluster and will be our main initial focus.
+    - 'time' - time value recorded in BJDays Barymetric-a standard for astronomy
+    - 'timecorr' - an incremental time value, not related back to real time I don't think
+    - 'source_file' - can group for individual stats using this, as such will keep
+
+- reomving the following columns as they will not add value to our clustering
+    - "cadenceno" >  like an index > 'a unique integer that is incremented with each cadence' 
+    "psf_centr1", "psf_centr1_err",  "psf_centr2", "psf_centr2_err" >>  Pixel Response Funtion (PSF) - think related to calibration of pixels in telescope. Not relevant to us in clustering.
+    - "mom_centr1", "mom_centr1_err", "mom_centr2", "mom_centr2_err" >>  moment-derived column - related to location of target position at cadences
+    - "centroid_col", "centroid_row" >> related to locations of targets and centroid and howp they are identified, tracked
+    - "pos_corr1", "pos_corr2"  >> related to local image motion in relation to pixels
+    - "sap_bkg", "sap_bkg_err " >> background flux over aperture for each pixel
+
+[2]
+
+2.4 Remove unneeded columns and verify data as expected after deletion
+
+```{python}
+# remove columns which we will not use in cluatering
+columns_to_drop = [
+    "psf_centr1", "psf_centr1_err", "psf_centr2", "psf_centr2_err",
+    "mom_centr1", "mom_centr1_err", "mom_centr2", "mom_centr2_err",
+    "centroid_col", "centroid_row", "pos_corr1", "pos_corr2", "sap_bkg", "sap_bkg_err"
+]
+
+clean_df = raw_df.drop(columns=columns_to_drop)
+```
+
+```{python}
+# quick look at data to see if its as we expectafter removal of columns
+
+# view various dataframe details
+# checking for null values and specific unknown values
+print ("Rows     : " , clean_df.shape[0])
+print ("Columns  : " , clean_df.shape[1])
+print('------')
+print ("\nFeatures : \n" , clean_df.columns.tolist())
+print('------')
+print ("\nMissing values :  ", clean_df.isnull().sum().values.sum())
+print('------')
+print ("\nMissing values per column:  \n", clean_df.isnull().sum())
+print('------')
+print('\nnum of dups in df   =   {}'.format(clean_df.duplicated().sum()))
+print('------')
+print ("\nUnique values :  \n", clean_df.nunique())
+print('------')
+print('\n null values = ', clean_df.isnull().values.any())
+print('------')
+clean_df_missing = (df=='?').sum()
+print('\"  ?   \" values present =  \n',clean_df_missing)
+print('------')
+clean_df_unknown = (clean_df=='unknown').sum()
+print('\"   unknown   \" values present =  \n',clean_df_unknown)
+print('------')
+clean_df_na = clean_df.isin(['N/A', 'N\\A', 'NA', 'n/a', 'n\\A', 'na', 'N_A']).sum()
+print('    NA     values present = \n', clean_df_na)
+print('------')
+clean_df_none = clean_df.isin(['None', 'none']).sum()
+print('    none    values present = \n', clean_df_none)
+```
+
+2.5 Further Data Insights
+
+We have over 2 million rows of data and 11 columns of interest.
+
+- 'pdcsapflux' 
+
+This will be the main column of interest for us, i.e. the cleaned light flux data.
+
+Missing values in this column of interest are ~ 41K. Its a big enough number so need to consider implication of deleting. If we do delete them we do still have a very large dataset though. 
+
+To replace missing flux data, interpolating perhaps would provide not 'true' data in that column. There is a trade off having real data vs artificial data. This is a critical column and we can really only have valid data present in it. 
+
+After consideration we will drop empty values in 'dscsap_flux' column, this is to avoid erroneous data and we can still have a significant amount of data available to us for analysis.
+
+To replace missing flux data would provide not true data in that column, this is a critical column and we can only have valid data present in it.
+
+Don't want to over clean the data as not 100% confident in what is in it and don't want to remove anything that is potentially meaningful, i.e. an outlier could be a value that we are looking to identify...
+
+- 'sap_flux' and 'flux'
+These also contain missing values. We will remove the 'pdc' values first and see if that affects these, they may be related. 
+
+The associated error values '_err' also havign missinfg values, again we'll see how removing the pdc values affects these, before deciding how to deal with them. We do not intend using them in analysis at this stage so not a priority.
+
+2.6 Plot for how the data looks for different star types
+
+```{python}
+# Plot for how the data looks for different star types just to get a feel for it
+for star in clean_df["source_file"].unique()[:3]:  # e.g., first 3 stars
+    star_df = clean_df[clean_df["source_file"] == star]
+    plt.figure(figsize=(10, 4))
+    plt.plot(star_df["time"], star_df["pdcsap_flux"], '.', markersize=2)
+    plt.title(f"Light Curve for {star}")
+    plt.xlabel("Time (BTJD)")
+    plt.ylabel("pdcsap_flux")
+    plt.grid(True)
+    plt.show()
+```
+
+2.7 Plots of distribution of data per column
+
+```{python}
+# look at distribution of data
+numeric_cols = clean_df.select_dtypes(include='number').columns
+
+for col in numeric_cols:
+    plt.figure(figsize=(10, 3))
+    clean_df[col].hist(bins=100)
+    plt.title(f"Distribution of {col}")
+    plt.xlabel(col)
+    plt.ylabel("Count")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+```
+
+2.8 Plots of outliers in the column data
+
+```{python}
+numeric_columns = clean_df.select_dtypes(include=['number']).columns
+sample_df = clean_df.sample(frac=0.01, random_state=42)
+
+for col in numeric_columns:
+    plt.figure(figsize=(10, 2))
+    plt.boxplot(sample_df[col].dropna(), vert=False)
+    plt.title(f'Boxplot of {col}')
+    plt.xlabel(col)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+```
+
+2.9 Further Data Insights from plots
+
+
+Time - gaps could be down time in instruments where no data taken
+
+Outliers ??? have outliers how to deal with them... again dont' want to mess with the actual real data too much as not familaiur enough with it . want to keep as much raw real data as possible.
+could MinMaxScaler or winzorise.... what is best 
+
+## Step 3 - Clean data
+
+3.1 Drop empty columns from 'pdcsap_flux' and verify successful
+
+```{python}
+# craete a new df off rclean_df so we cna have a clean df to work in and roll back to thsi point if we needed
+clean_col_rem_df=clean_df.copy()
+```
+
+```{python}
+#drop empty coluimns in pdcsap_flux
+clean_col_rem_df = clean_col_rem_df.dropna(subset=["pdcsap_flux"])
+
+# # fill missing value error columns with median values
+# # we will use median to avoid any potential skewness or outlier values
+# clean2_df["pdcsap_flux_err"].fillna(clean2_df["pdcsap_flux_err"].median(), inplace=True)
+```
+
+```{python}
+print ("Rows     : " , clean_col_rem_df.shape[0])
+print ("Columns  : " , clean_col_rem_df.shape[1])
+print('------')
+print ("\nFeatures : \n" , clean_col_rem_df.columns.tolist())
+print('------')
+print ("\nMissing values :  ", clean_col_rem_df.isnull().sum().values.sum())
+print('------')
+print ("\nMissing values per column:  \n", clean_col_rem_df.isnull().sum())
+print('------')
+print('\nnum of dups in df   =   {}'.format(clean_col_rem_df.duplicated().sum()))
+print('------')
+print ("\nUnique values :  \n", clean_col_rem_df.nunique())
+print('------')
+print('\n null values = ', clean_col_rem_df.isnull().values.any())
+print('------')
+clean_col_rem_df_missing = (df=='?').sum()
+print('\"  ?   \" values present =  \n',clean_col_rem_df_missing)
+print('------')
+clean_col_rem_df_unknown = (clean_col_rem_df=='unknown').sum()
+print('\"   unknown   \" values present =  \n',clean_col_rem_df_unknown)
+print('------')
+clean_col_rem_df_na = clean_col_rem_df.isin(['N/A', 'N\\A', 'NA', 'n/a', 'n\\A', 'na', 'N_A']).sum()
+print('    NA     values present = \n', clean_col_rem_df_na)
+print('------')
+clean_col_rem_df_none = clean_col_rem_df.isin(['None', 'none']).sum()
+print('    none    values present = \n', clean_col_rem_df_none)
+```
+
+3.2 Further Data Insight
+
+Removing the pdcsap_flux missing rows has removed the missing sap and flux and _err data also. Don't have any missing values on those rows now, which is good.
+
+Normalisation is important as different stars have different brightness and is a range of values, bright star will skew dat fomr stars not as bright, so need tonormalise/stanmdarise this flux data so all balanced around a central norm i.e. baseline of 1.0
+
+winsorisation - address outliers from influeicng analysis otucomes
+we'll apply to numerical columns
+we'll exclude the following form winsoristation
+- 'quality' - flags about quality 0, 1. need to keep as is
+- 'cadenceno' - more or less an indes
+- 'time' - a set time value, a real number don't want to change
+- 'timecorr' - as above
+- 'source_file' - non-numerical, relates to star ID
+
+3.3 Normalise the 'pdcsap_sap_flux' data and verify the chnages in a plot
+
+```{python}
+#Normalise Data
+
+# normalises uses the median per star and we groupby star using the source_file column
+# divide each flux value by that star's median flux value
+# we use transform to make sure the result keeps the original df shape and alignment
+# and we create a new column, 'pdcsap_flux_norm', to store the normalised data, sowe dont' lose the original
+# will create new df to normalise and retain cleaned df in case need
+clean_norm_df = clean_col_rem_df.copy()
+clean_norm_df['pdcsap_flux_norm'] = clean_col_rem_df.groupby("source_file")['pdcsap_flux'].transform(lambda x: x / x.median())
+```
+
+```{python}
+# Choose a single sample star which we'll pot before and after tocheck
+# cnba use source file toget individual star data
+example_star = clean_norm_df["source_file"].unique()[0]
+
+# Filter data for that star
+df_star = clean_norm_df[clean_norm_df["source_file"] == example_star]
+
+# Plot original vs normalized pdcsap_flux
+plt.figure(figsize=(14, 5))
+
+# Original flux
+plt.subplot(1, 2, 1)
+plt.plot(df_star["time"], df_star["pdcsap_flux"], color='blue')
+plt.title("Original pdcsap_flux")
+plt.xlabel("Time")
+plt.ylabel("Flux")
+
+# Normalized flux
+plt.subplot(1, 2, 2)
+plt.plot(df_star["time"], df_star["pdcsap_flux_norm"], color='green')
+plt.title("Normalized pdcsap_flux (per star median)")
+plt.xlabel("Time")
+plt.ylabel("Normalized Flux")
+
+plt.tight_layout()
+plt.show()
+```
+
+Normalisation plots above:
+
+- before - large range of data on y axis, values spread are much larger
+- After - data centred around a baseline of 1.0. Spread of data is much smalle around the baseline
+
+3.4 Winsorise selected numerical columns and verify the chnages in a plot
+
+```{python}
+# Winsorise Data
+
+# 7. Winzorising the data for extreme values
+# from scipy.stats.mstats import winsorize
+
+# crteate new df to work in
+clean_winsor_df=clean_norm_df.copy()
+
+# identify cols to include
+num_cols_1 = clean_norm_df.select_dtypes(include=['number']).columns
+cols_to_excl=['quality', 'cadenceno', 'time', 'timecorr', 'source_file']
+num_cols_2 = [col for col in num_cols_1 if col not in cols_to_excl]
+print(num_cols_1)
+print(num_cols_2)
+
+# Define 1% limit on both tails)
+lower = 0.01  # 1% percentile lower tail
+upper = 0.99  # 99% percentile upper tail
+
+# Apply winzoristiation 
+for col in num_cols_2:
+    col_data=clean_winsor_df[col].values
+    winsorised=winsorize(col_data, limits=(lower, 1-upper))
+    clean_winsor_df[col] = winsorised.filled()
+```
+
+```{python}
+clean_winsor_df.describe().transpose()
+```
+
+```{python}
+# quick check to see if data is as we expect post winsorising
+# we'll plot pdc flus column to see difference as its our main column of interest
+column_to_plot = 'pdcsap_flux_norm'  # or any other from num_cols_2
+
+# Create histograms before and after winsorizstion
+plt.figure(figsize=(12, 5))
+
+# Before winsorization
+plt.subplot(1, 2, 1)
+plt.hist(clean_norm_df[column_to_plot], bins=100, color='skyblue', edgecolor='black')
+plt.title(f'Before Winsorisation: {column_to_plot}')
+plt.xlabel(column_to_plot)
+plt.ylabel('Frequency')
+
+# After winsorization
+plt.subplot(1, 2, 2)
+plt.hist(clean_winsor_df[column_to_plot], bins=100, color='lightgreen', edgecolor='black')
+plt.title(f'After Winsorisation: {column_to_plot}')
+plt.xlabel(column_to_plot)
+plt.ylabel('Frequency')
+
+plt.tight_layout()
+plt.show()
+```
+
+Winsorisation plots above:
+
+- before - goes up to 1.75 million form zero
+- After - outliers outside of 1% percentile and 99% percentile have been removed. Data is tighter around 1.0
+
+## Step 4 - Extract a feature from the Data to cluster
+
+As it is time series data and we have multiple values per star we need to combines those values to a single, sumarised value per star so we can use them in clustering. we will extract those now in this section. 
+
+we'll lok at number of dips in pdcsap_flux and time
+
+4.1 Create new df of latest to work in
+
+```{python}
+# create new df to work on from thsi point and retain latest one in case we need to return to a checkpoint in time
+extract_feature_df=clean_winsor_df.copy()
+```
+
+4.2 Determine light curve dip data values from 'pdcsap_flux_norm' and Plot them to verify data is as expect
+
+```{python}
+# play around wiht prominence value 
+# >> 0.005 =  no dips, 
+# >> 0.004 = 2, 1, and 6 dips
+# >> 0.003 = 21, 42 and 25 dips
+# Trial and error determien what a good value is and we're not including noise but real dip values and drops in intensity of light
+# decided to go with 0.004 value to reduce the amount of false positives
+def plot_light_curve_with_dips(df, star_id, flux_col='pdcsap_flux_norm', prominence=0.004):
+    star_data = df[df['source_file'] == star_id]
+    flux = star_data[flux_col].values
+    time = star_data['time'].values
+
+    # Find dips
+    dips, _ = find_peaks(-flux, prominence=prominence)
+    dip_count = len(dips)
+
+    # Plot
+    plt.figure(figsize=(10, 4))
+    plt.plot(time, flux, label='Flux')
+    plt.plot(time[dips], flux[dips], 'ro', label='Detected Dips')
+    plt.xlabel('Time (BTJD)')
+    plt.ylabel('Normalized Flux')
+    plt.title(f"Light Curve: {star_id}  |  Dips Found: {dip_count}")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+# [5] [SciPy - find_peaks](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.find_peaks.html#scipy.signal.find_peaks)
+```
+
+```{python}
+# Get 3 unique stars to plot
+sample_stars = extract_feature_df['source_file'].unique()[:3]
+
+# Plot them
+for star in sample_stars:
+    plot_light_curve_with_dips(extract_feature_df, star)
+```
+
+```{python}
+extract_feature_df.shape
+```
+
+4.3 Calculate and Add flux dip data, 'num_flux_dips' to new column in dataframe
+
+```{python}
+# Create a dictionary to store dip counts
+num_flux_dips = {}
+
+# Group by source_file (one light curve per star)
+for source, group in extract_feature_df.groupby("source_file"):
+    flux = group["pdcsap_flux_norm"].values
+    # we invert the flux as per documentation toidentify the valleys/dips
+    # set value at 0.004 as per earlier verification checks
+    dips, _ = find_peaks(-flux, prominence=0.004) 
+    num_flux_dips[source] = len(dips)
+```
+
+```{python}
+# Convert to DataFrame which we cna ten merge
+num_flux_dips_df = pd.DataFrame(list(num_flux_dips.items()), columns=["source_file", "num_flux_dips"])
+```
+
+```{python}
+# Merge with your main dataframe on source_file)
+extract_feature_df = extract_feature_df.merge(num_flux_dips_df, on="source_file", how="left")
+```
+
+```{python}
+print ("Rows     : " , extract_feature_df.shape[0])
+print ("Columns  : " , extract_feature_df.shape[1])
+print('------')
+print ("\nFeatures : \n" , extract_feature_df.columns.tolist())
+print('------')
+print ("\nMissing values :  ", extract_feature_df.isnull().sum().values.sum())
+print('------')
+print ("\nMissing values per column:  \n", extract_feature_df.isnull().sum())
+print('------')
+print('\nnum of dups in df   =   {}'.format(extract_feature_df.duplicated().sum()))
+print('------')
+print ("\nUnique values :  \n", extract_feature_df.nunique())
+print('------')
+print('\n null values = ', extract_feature_df.isnull().values.any())
+print('------')
+extract_feature_df_missing = (df=='?').sum()
+print('\"  ?   \" values present =  \n',extract_feature_df_missing)
+print('------')
+extract_feature_df_unknown = (extract_feature_df=='unknown').sum()
+print('\"   unknown   \" values present =  \n',extract_feature_df_unknown)
+print('------')
+extract_feature_df_na = extract_feature_df.isin(['N/A', 'N\\A', 'NA', 'n/a', 'n\\A', 'na', 'N_A']).sum()
+print('    NA     values present = \n', extract_feature_df_na)
+print('------')
+extract_feature_df_none = extract_feature_df.isin(['None', 'none']).sum()
+print('    none    values present = \n', extract_feature_df_none)
+```
+
+4.4 Calculate the variability of the flux per star, we'll use the standard deviation to represent this, 'flux_std'
+
+```{python}
+flux_std_df = extract_feature_df.groupby("source_file").agg(flux_std=('pdcsap_flux_norm', 'std')).reset_index()
+```
+
+4.5 Calculate average dip duration per star, 'dip_duration'
+
+```{python}
+# we cna calculate the width of the invert peaks, which are the dips
+dip_durations = []
+
+for source, group in extract_feature_df.groupby("source_file"):
+    flux = group["pdcsap_flux_norm"].values
+    time = group["time"].values
+    dips, _ = find_peaks(-flux, prominence=0.004)
+    
+    # Calculate widths in time units
+    results_half = peak_widths(-flux, dips, rel_height=0.5)
+    widths = results_half[0]  # widths in data points
+
+    # convert to time units using time difference
+    if len(widths) > 0:
+        avg_duration = np.mean(widths * np.median(np.diff(time)))
+    else:
+        avg_duration = 0
+    
+    dip_durations.append({"source_file": source, "avg_dip_duration": avg_duration})
+
+dip_duration_df = pd.DataFrame(dip_durations)
+```
+
+4.6 Merge all calculated per star data into a dataframe and verify
+
+```{python}
+# take source file and num_flux_dips from df and put them into a new df to use in clustering
+x_features_df = extract_feature_df[['source_file', 'num_flux_dips']].drop_duplicates()
+
+# add flus_std column data
+x_features_df = x_features_df.merge(flux_std_df, on="source_file", how="left")
+
+# add dip duration data 
+x_features_df = x_features_df.merge(dip_duration_df, on="source_file", how="left")
+```
+
+```{python}
+x_features_df.head()
+```
+
+```{python}
+print ("Rows     : " , x_features_df.shape[0])
+print ("Columns  : " , x_features_df.shape[1])
+print('------')
+print ("\nFeatures : \n" , x_features_df.columns.tolist())
+print('------')
+print ("\nMissing values :  ", x_features_df.isnull().sum().values.sum())
+print('------')
+print ("\nMissing values per column:  \n", x_features_df.isnull().sum())
+print('------')
+print('\nnum of dups in df   =   {}'.format(x_features_df.duplicated().sum()))
+print('------')
+print ("\nUnique values :  \n", x_features_df.nunique())
+print('------')
+print('\n null values = ', x_features_df.isnull().values.any())
+print('------')
+x_features_df_missing = (df=='?').sum()
+print('\"  ?   \" values present =  \n',x_features_df_missing)
+print('------')
+x_features_df_unknown = (x_features_df=='unknown').sum()
+print('\"   unknown   \" values present =  \n',x_features_df_unknown)
+print('------')
+x_features_df_na = x_features_df.isin(['N/A', 'N\\A', 'NA', 'n/a', 'n\\A', 'na', 'N_A']).sum()
+print('    NA     values present = \n', x_features_df_na)
+print('------')
+x_features_df_none = x_features_df.isin(['None', 'none']).sum()
+print('    none    values present = \n', x_features_df_none)
+```
+
+4.7 Data Insights
+
+- we have 100 unique source file values which means data 100 stars
+- we have 61 flux dip values, which hopefully is a reasonable spread
+- we have 86 dip duration values
+- we have 100 flux_std values
+- There is a range in the date so we will need to normalise the data
+- there are 0.0 values present, they are zero values and not missing values, so we will leave them as trying to keep as much original data as possible
+
+4.8 Normalise the dataframe and verify it is as we expect
+
+```{python}
+features = ['num_flux_dips', 'flux_std', 'avg_dip_duration']
+scaler = MinMaxScaler()
+x_features_norm_df = scaler.fit_transform(x_features_df[features])
+```
+
+```{python}
+# convetr back to datafram as scaler.fit_transform gives us a numpy array
+x_features_norm_df = pd.DataFrame(x_features_norm_df, columns=features, index=x_features_df.index)
+
+# add back in the source _file column as lost it in the normalization
+x_features_norm_df = pd.DataFrame(x_features_norm_df, columns=features, index=x_features_df.index)
+x_features_norm_df["source_file"] = x_features_df["source_file"].values
+
+# quick look at its shape
+x_features_norm_df.shape
+```
+
+```{python}
+print ("Rows     : " , x_features_norm_df.shape[0])
+print ("Columns  : " , x_features_norm_df.shape[1])
+print('------')
+print ("\nFeatures : \n" , x_features_norm_df.columns.tolist())
+print('------')
+print ("\nMissing values :  ", x_features_norm_df.isnull().sum().values.sum())
+print('------')
+print ("\nMissing values per column:  \n", x_features_norm_df.isnull().sum())
+print('------')
+print('\nnum of dups in df   =   {}'.format(x_features_norm_df.duplicated().sum()))
+print('------')
+print ("\nUnique values :  \n", x_features_norm_df.nunique())
+print('------')
+print('\n null values = ', x_features_norm_df.isnull().values.any())
+print('------')
+x_features_norm_df_missing = (df=='?').sum()
+print('\"  ?   \" values present =  \n',x_features_df_missing)
+print('------')
+x_features_norm_df_unknown = (x_features_norm_df=='unknown').sum()
+print('\"   unknown   \" values present =  \n',x_features_norm_df_unknown)
+print('------')
+x_features_norm_df_na = x_features_norm_df.isin(['N/A', 'N\\A', 'NA', 'n/a', 'n\\A', 'na', 'N_A']).sum()
+print('    NA     values present = \n', x_features_norm_df_na)
+print('------')
+x_features_norm_df_none = x_features_norm_df.isin(['None', 'none']).sum()
+print('    none    values present = \n', x_features_norm_df_none)
+```
+
+## Step 5 - Clustering
+
+5.1 - Create a new dataframe with one row per star on our feature
+
+```{python}
+# create a new dataframe to work in
+x_df = x_features_norm_df.copy()
+```
+
+```{python}
+# drop sopurce_file as kmeans fit expects al numerical data
+x_df = x_df.drop(columns=["source_file"])
+```
+
+```{python}
+x_df.head()
+```
+
+```{python}
+# scaler = MinMaxScaler()
+
+# # Normalize 'num_flux_dips'
+# scaler.fit(x_df[['num_flux_dips']])
+# x_df['num_flux_dips'] = scaler.transform(x_df[['num_flux_dips']])
+
+# # Normalize 'avg_dip_duration'
+# scaler.fit(x_df[['avg_dip_duration']])
+# x_df['avg_dip_duration'] = scaler.transform(x_df[['avg_dip_duration']])
+
+# # Normalize 'flux_std'
+# scaler.fit(x_df[['flux_std']])
+# x_df['flux_std'] = scaler.transform(x_df[['flux_std']])
+```
+
+```{python}
+# creat6e new dataframe that will contain one row per star
+x_df = x_df[["source_file", "num_flux_dips"]].drop_duplicates(subset=["source_file"])
+
+
+#  we just need the numerical column(s)
+x_features = x_df[["num_flux_dips"]]
+```
+
+```{python}
+x_df.shape
+```
+
+5.2 Plot elbow curve to determine appropriate cluster count
+
+```{python}
+# Try different cluster counts
+sse = []
+k_range = range(1, 10)
+
+for k in k_range:
+    km = KMeans(n_clusters=k, random_state=42)
+    km.fit(x_df)
+    sse.append(km.inertia_)  # Sum of squared distances
+
+# Plot the elbow curve
+plt.figure(figsize=(8, 4))
+plt.plot(k_range, sse, marker='o')
+plt.xlabel("Number of Clusters (k)")
+plt.ylabel("Sum of Squared Errors (SSE)")
+plt.title("Elbow Method for Optimal k")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+```
+
+5.3 Create KMeans cluster and analyze data
+
+```{python}
+# # initialise the kmeans model with 2 clusters and we're just using num_flux_dips column to cerry out clustering
+# # we'll add thre resulting cluster label of 1 or 0 as a new column in x_features called cluster
+# kmeans = KMeans(n_clusters=3, random_state=42)
+# x_df["cluster"] = kmeans.fit_predict(x_df[["num_flux_dips", "avg_dip_duration", "flux_std"]])
+
+#x_df(["cluster"].value_counts())
+```
+
+```{python}
+#Now create a K-means model containing 2 clustsers
+# we dicded ont his after tryign all values and also after silhouette plot calculation
+km = KMeans(n_clusters=2)
+y_predicted = km.fit_predict(x_df[['num_flux_dips',"avg_dip_duration", "flux_std"]])
+#display the predicted clusters
+y_predicted
+```
+
+```{python}
+#Add the clusters to the original DF, to have all the data together
+#x_df['cluster']=y_predicted
+x_df.head()
+```
+
+```{python}
+#We can examine different aspects of the model
+#Here we list the Centroids for the 3 clusters
+km.cluster_centers_
+```
+
+5.4 Plot Kmeans cluster data
+
+```{python}
+# Separate out each cluster for custom formatting
+df0 = x_df[x_df.cluster == 0]
+df1 = x_df[x_df.cluster == 1]
+# df2 = x_df[x_df.cluster == 2]
+
+# Plot each cluster with a different color
+plt.scatter(df0['avg_dip_duration'], df0['num_flux_dips'], color='green', label='Cluster 0')
+plt.scatter(df1['avg_dip_duration'], df1['num_flux_dips'], color='red', label='Cluster 1')
+# plt.scatter(df2['avg_dip_duration'], df2['num_flux_dips'], color='blue', label='Cluster 2')
+
+# Plot centroids
+plt.scatter(km.cluster_centers_[:,1], km.cluster_centers_[:,0], color='purple', marker='+', s=200, label='Centroids')
+
+# Label axes
+plt.xlabel('Average Dip Duration')
+plt.ylabel('Number of Flux Dips')
+plt.title('K-Means Clustering of TESS Stars')
+plt.legend()
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+sns.scatterplot(data=x_df, x="avg_dip_duration", y="num_flux_dips", hue="cluster", palette="Set1")
+
+# Plot centroids
+plt.scatter(km.cluster_centers_[:,1], km.cluster_centers_[:,0], color='purple', marker='+', s=200, label='Centroids')
+
+plt.title("Clusters by Number of Flux Dips")
+plt.show()
+
+```
+
+```{python}
+sns.scatterplot(data=x_df, x="flux_std", y="num_flux_dips", hue="cluster", palette="Set1")
+# Plot centroids
+plt.scatter(km.cluster_centers_[:,1], km.cluster_centers_[:,0], color='purple', marker='+', s=200, label='Centroids')
+
+plt.title("Clusters by Number of Flux Dips")
+plt.show()
+```
+
+```{python}
+sns.scatterplot(data=x_df, x="flux_std", y="avg_dip_duration", hue="cluster", palette="Set1")
+
+# Plot centroids
+plt.scatter(km.cluster_centers_[:,1], km.cluster_centers_[:,0], color='purple', marker='+', s=200, label='Centroids')
+
+plt.title("Clusters by Number of Flux Dips")
+plt.show()
+```
+
+5.5 Plot Kmeans cluster data in 3D
+
+```{python}
+# a 3D plot with k value of 2 clusters
+fig = plt.figure(figsize=(10, 7))
+ax = fig.add_subplot(111, projection='3d')
+
+# Plot each cluster
+ax.scatter(df0['avg_dip_duration'], df0['num_flux_dips'], df0['flux_std'], color='green', label='Cluster 0')
+ax.scatter(df1['avg_dip_duration'], df1['num_flux_dips'], df1['flux_std'], color='red', label='Cluster 1')
+#ax.scatter(df2['avg_dip_duration'], df2['num_flux_dips'], df2['flux_std'], color='blue', label='Cluster 2')
+
+# Plot centroids
+ax.scatter(km.cluster_centers_[:, 1], km.cluster_centers_[:, 0], km.cluster_centers_[:, 2], 
+           color='purple', marker='X', s=100, label='Centroids')
+
+# Axis labels
+ax.set_xlabel('Average Dip Duration')
+ax.set_ylabel('Number of Flux Dips')
+ax.set_zlabel('Flux Std Deviation')
+ax.set_title('3D Clustering of TESS Light Curves')
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+5.6 Initial Data Insights
+
+- decided to go with k=3 as it seemed like mid way point bertween 2 and 4 where biggest change occured
+ 
+```sh
+k=2
+cluster
+0    78
+1    22
+Name: count, dtype: int64
+-----------------------
+k=3
+cluster
+0    73
+1    15
+2    12
+Name: count, dtype: int64
+--------------------
+k= 4 
+cluster
+0    70
+3    14
+2     8
+1     8
+Name: count, dtype: int64
+```
+
+- 2D
+    - clusters are linear in nature, separation is present but seem alligned
+    - There are zero values present which perhaps Zero values could represent low activity in stars. They are not missing values, but actual 0.0 values
+    - Data does look strange and haven't been able to figure out why ....
+
+- 3D plot 
+    - x axis = avg fip duration
+    - y axis = num of flux dips
+    - z axis = flux variability
+    - CVlusters are well separtated in 3D plot, less so in 2D plot
+    - centroids are where we would expect - indicating the average value for the set of clusters
+
+5.7 Plot Kmeans++ data
+
+```{python}
+# Perform KMeans++ clustering
+kmeans = KMeans(n_clusters=2, init='k-means++', random_state=42)
+kmeans.fit(x_df[["num_flux_dips", "avg_dip_duration"]])
+
+# Get centroids
+centroids = kmeans.cluster_centers_
+
+# Add cluster labels to DataFrame
+x_df["kmeans_pp_cluster"] = kmeans.labels_
+
+# Plot
+plt.figure(figsize=(10, 8))
+plt.title("K-means++ Clustering with Centroids and 3 Clusters")
+plt.xlabel("Number of Flux Dips")
+plt.ylabel("Average Dip Duration")
+
+plt.scatter(
+    x_df["num_flux_dips"], 
+    x_df["avg_dip_duration"], 
+    c=kmeans.labels_, 
+    cmap='viridis', 
+    s=50, alpha=0.6
+)
+plt.scatter(
+    centroids[:, 0], 
+    centroids[:, 1], 
+    c='red', 
+    s=100, 
+    marker='X', 
+    label='Centroids'
+)
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+```
+
+5.7 Calculate and Display the Silhouette values
+
+the silhouette value can help us evaluate the quality of clustering. It may determine how well data points fit within their assigned clusters and whether the number of clusters is optimal
+
+```{python}
+
+features = ['num_flux_dips', 'avg_dip_duration', 'flux_std']
+df_for_clustering = x_df[features]
+
+range_n_clusters = [2, 3, 4, 5, 6, 7, 8]
+silhouette_avg = []
+
+for num_clusters in range_n_clusters:
+    # Initialize KMeans++
+    kmeans = KMeans(n_clusters=num_clusters, init='k-means++', random_state=42)
+    cluster_labels = kmeans.fit_predict(df_for_clustering)
+    
+    # Calculate average silhouette score
+    score = silhouette_score(df_for_clustering, cluster_labels)
+    silhouette_avg.append(score)
+    print(f"For n_clusters = {num_clusters}, the average silhouette_score is: {score:.4f}")
+
+# Plot the silhouette scores for each cluster count
+plt.figure(figsize=(8, 5))
+plt.plot(range_n_clusters, silhouette_avg, marker='o')
+plt.xlabel("Number of Clusters (k)")
+plt.ylabel("Silhouette Score")
+plt.title("Silhouette Analysis for Optimal k")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+```
+
+5.9 Alternative silhouette data plot
+
+```{python}
+# Ensure you use only the feature columns
+X = x_df[["avg_dip_duration", "num_flux_dips", "flux_std"]].values
+range_n_clusters = [2, 3, 4, 5]
+
+for n_clusters in range_n_clusters:
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+    fig.set_size_inches(18, 7)
+
+    ax1.set_xlim([-0.1, 1])
+    ax1.set_ylim([0, len(X) + (n_clusters + 1) * 10])
+
+    clusterer = KMeans(n_clusters=n_clusters, init='k-means++', random_state=42)
+    cluster_labels = clusterer.fit_predict(X)
+
+    silhouette_avg = silhouette_score(X, cluster_labels)
+    print(f"For n_clusters = {n_clusters}, average silhouette_score = {silhouette_avg:.4f}")
+
+    sample_silhouette_values = silhouette_samples(X, cluster_labels)
+
+    y_lower = 10
+    for i in range(n_clusters):
+        ith_vals = sample_silhouette_values[cluster_labels == i]
+        ith_vals.sort()
+        size = ith_vals.shape[0]
+        y_upper = y_lower + size
+
+        color = cm.nipy_spectral(float(i) / n_clusters)
+        ax1.fill_betweenx(np.arange(y_lower, y_upper), 0, ith_vals, facecolor=color, edgecolor=color, alpha=0.7)
+        ax1.text(-0.05, y_lower + 0.5 * size, str(i))
+        y_lower = y_upper + 10
+
+    ax1.set_title("The Silhouette plot for the various clusters.")
+    ax1.set_xlabel("The Silhouette coefficient values")
+    ax1.set_ylabel("Cluster label")
+    ax1.axvline(x=silhouette_avg, color="red", linestyle="--")
+    ax1.set_yticks([])
+    ax1.set_xticks(np.linspace(-0.1, 1.0, 6))
+
+    # 2D cluster plot (first two features)
+    colors = cm.nipy_spectral(cluster_labels.astype(float) / n_clusters)
+    ax2.scatter(X[:, 0], X[:, 1], marker='.', s=30, lw=0, alpha=0.7, c=colors, edgecolor="k")
+
+    centers = clusterer.cluster_centers_
+    ax2.scatter(centers[:, 0], centers[:, 1], marker='o', c='white', alpha=1, s=200, edgecolor='k')
+    for i, c in enumerate(centers):
+        ax2.scatter(c[0], c[1], marker=f"${i}$", alpha=1, s=50, edgecolor='k')
+
+    ax2.set_title("The Visualization of the clusteered data (2 features)")
+    ax2.set_xlabel("Average Dip Duration")
+    ax2.set_ylabel("Number of Flux Dips")
+
+    plt.suptitle(f"Silhouette analysis for KMeans with n_clusters = {n_clusters}", fontsize=14, fontweight='bold')
+    plt.show()
+```
+
+5.8 Data Insights from silhouette plots
+
+ - best value is 1 => data point is very compact
+ - worst value is -1 = vlaues may have been assigned to the wrong clusters
+ - values of zero => overlapping clusters
+ - the horizontal coloured irregular bars represents clusters and the width of the score represent a silhuette score
+ - red dashed line gives average silhouette score
+
+ 
+```sh
+For n_clusters = 2, the average silhouette_score is: 0.7577
+For n_clusters = 3, the average silhouette_score is: 0.7044
+For n_clusters = 4, the average silhouette_score is: 0.7463
+For n_clusters = 5, the average silhouette_score is: 0.7143
+For n_clusters = 6, the average silhouette_score is: 0.7146
+For n_clusters = 7, the average silhouette_score is: 0.7201
+```
+ - k=2 has thre highest score at  .75 => this is our best k value
+ - k = 4 and 8 preform reasonably well also with high values
+ - k=3 does nto perform well
+
+###  Step 6 - Conclusion and Learnings
+
+- The data initially performed very well. All graphs and analysis as went displayed and looked as I had expected.
+- In the clustering phase the data may be performgin fine but the graphs do not look as I expected, althoguh as thsi is my firsttime workign with scientific dat oin this scale perhaps my expectations of what the data should lok like is incorrect. It may very well be performing as expected.... 
+- The hope was we would see cluster of data where dips occurred at the same frequency intervals. However that was not really was we observed in our clustering analysis
+- Was our dataset big enough to spot a planet transitioning across a star.I do not know the answer to this. Repeating the process with a larger dataset may give better results. Perhaps the period of transition of a planet across a star is longer on this sector.
+- Data in the clustering phase didn't Noy quite sure how to interpret the results and plots of the clustering.
+    - a lot of zero values or near zero values. This mayh have been how I dealt with the outliers MinMaxScaler and Winsorising
+- DBScan was run also on the and the values below were determined but it was hard to put an interpretation on them. There is valid clusters present but again the data looked a bit off. 
+    - eps ~ 0.15
+    - minPts ~ 4    
+- did we use enough data. We could take a larger set fo data and from other sectors. There are challenges with this but the. Aggregating the compute or sharing the analysis is a good approach to spread the burden.
+- I had initially thought the complexity  of the dat coudl be overwhelming but the data itself is not overwhelmign once yuo overcome the intial shock of the column names and understanding their meaning, or mostly understanding their meaning.
+- There was a lot of learning around hgwo the scientific community process data. Data Analysis is a key part of scientific work. Identifyign efficient ways to standardise and 
+
+### Challenges
+
+- There is no shortage of data. However it is diffficult and time consuming finding the correct data and gaining an understanding of it. Thats a skill in itself
+- I need to work with the data for an extended period to gain good insight into it and how to manage it
+- Processing time
+    - we used a subset of 100 files - each of which contained approx 12K records. The amount of data we did not use was many multiples of this
+    - This resulted in long processing times for some tasks
+    - 
+
+### Improvements
+
+- get mroe data points to cross check based on light curve per star such as the duration of the dips, how consistenmt the dip is i.e. depth, how long it lasts for (may be able to get diameter of planet based on duration of dip)
+- DBScan was run also on the and the values below were determined but it was hard to put an interpretation on them. There is valid clusters present but again the data looked a bit off. 
+    - eps ~ 0.15
+    - minPts ~ 4   
+- More compute power. There is a lot of data to process, even our small subset of data
+- Need to do process this type of data regularly to gain domain knowledge, tips and tricks for dealing with it. 
+- Perform on a different sector over sa different time and se if it is any different.
+- Perform in same sector but differnt rime period and see data performs differently.
+- I will be quicker next time...
+
+### Appendix - References
+
+- [1] [methods for detecting dips in curves - LightKurve package] > https://lightkurve.github.io/lightkurve/tutorials/3-science-examples/exoplanets-identifying-transiting-planet-signals.html
+- [2][Kepler: A Search for Terrestrial Planets](https://archive.stsci.edu/files/live/sites/mast/files/home/missions-and-data/kepler/_documents/archive_manual.pdf)
+- [3][Astropy - Installation](https://docs.astropy.org/en/stable/install.html)
+- [4] [INstallation](https://docs.astropy.org/en/stable/install.html)
+

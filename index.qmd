@@ -1,0 +1,8 @@
+---
+title: "Welcome to some data analysis projects"
+format: html
+---
+
+This site shows some Jupyter notebooks covering various data analysis topics
+
+it is hosted using Quarto and GitHub Pages.
