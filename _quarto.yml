@@ -1,13 +1,17 @@
 project:
   type: website
-  output-dir: docs
+  # output-dir: docs
 
 website:
-  title: "Data Analysis Notebooks"
+  title: "Data Analysis Projects"
+  output-dir: "_posts"
   navbar:
     # left:
     #   - href: index.qmd
     #     text: Home
+    right:
+      - icon: "github"
+        href: "https://github.com/eamonnk"
     left:
       - href: index.qmd
         text: Home
@@ -15,12 +19,15 @@ website:
         text: Eticheck
       - href: notebooks/exoplanet_id_clustering_final.ipynb
         text: exoplanet ID
-
-
-format:
-  html:
-    theme: cosmo
-    toc: true
+  theme: cosmo
+  blog:
+    output-dir: "_posts"
+    title: "ek-blog"
+    description: "Data analysis and commentary"
+    date-format: long
+    lang: en
+    link-citations: true
+    document-css: false
 
 
 

@@ -1,7 +1,6 @@
----
-title: "Welcome to some data analysis projects"
-format: html
----
+# Welcome to ek-blog
+
+This blog features data analysis projects and commentary
 
 This site shows some Jupyter notebooks covering various data analysis topics
 
