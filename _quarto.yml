@@ -12,7 +12,7 @@ website:
       - href: index.qmd
         text: Home
       - href: notebooks/esg_text_mining_poc_final.ipynb
-        text: Notebook 1
+        text: Company Ethical Check
 
 format:
   html:
