@@ -13,6 +13,9 @@ website:
         text: Home
       - href: notebooks/esg_text_mining_poc_final.ipynb
         text: Company Ethical Check
+      - href: exoplanet_id_clustering_final.ipynb
+        text: exoplanet ID
+
 
 format:
   html:
