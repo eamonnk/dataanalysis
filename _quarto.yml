@@ -11,7 +11,7 @@ website:
     left:
       - href: index.qmd
         text: Home
-      - href: notebooks/esg_text_mining_poc_final.qmd
+      - href: notebooks/esg_text_mining_poc_final.ipynb
         text: Notebook 1
 
 format:
