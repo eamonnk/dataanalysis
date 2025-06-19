@@ -3,20 +3,14 @@ title: exoplanet identification
 date: 2025-05-20
 categories: [analysis]
 tags: [clustering]
-jupyter: python3
 ---
-
-
-#### Student: Eamonn Kelly - student #: D24127620
-
-#### Part 2 File - Clustering
 
 
 ## Problem Statement
 
-As planets in far away solar systems roate about suns, the light the reach earth from those sun is reduced, as the planet passes across its path. Monitoring the light coming from stars and looking for those dips in light intensity/brightness can be a way of identifying far away planets orbiting suns.
+As planets in far away solar systems rotate about suns, the light the reach earth from those sun is reduced, as the planet passes across its path. Monitoring the light coming from stars and looking for those dips in light intensity/brightness can be a way of identifying far away planets orbiting suns.
 
-Nasa have programs actively looking to identify these 'exoplanets' with the TESS and Kepler programs. They make this data availabel to the public and it is also available through some universities. 
+Nasa have programs actively looking to identify these 'exoplanets' with the TESS and Kepler programs. They make this data available to the public and it is also available through some universities. 
 
 - https://science.nasa.gov/exoplanets/
 - https://exoplanets.nasa.gov/tess/

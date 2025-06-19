@@ -3,7 +3,7 @@ title: esg check text mining
 date: 2025-06-01
 categories: [analysis]
 tags: [textmining]
-jupyter: python3
+
 ---
 
 
